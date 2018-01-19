@@ -1,5 +1,5 @@
-# SteamMarketPriceTracker
-A Simple Steam Market Crawler
+# Web Crawler
+A Simple Web Crawler
 
 Note:
 There is a limit of Steam requests.
