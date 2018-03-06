@@ -3,7 +3,7 @@ A Simple Web Crawler
 
 Run
 ```console
-python SteamDataRetrieve.py
+$ python SteamDataRetrieve.py
 ```
 
 Enter your `keyword`, e.g. ak47  
