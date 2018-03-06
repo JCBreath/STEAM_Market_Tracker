@@ -1,6 +1,6 @@
 # STEAM Market Tracker
 A Simple Web Crawler
-
+### Usage
 Run
 ```console
 python SteamDataRetrieve.py
