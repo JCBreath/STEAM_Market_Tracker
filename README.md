@@ -7,8 +7,12 @@ python SteamDataRetrieve.py
 ```
 
 Enter your `keyword`, e.g. ak47  
-List will be printed and written to *item_list.txt*
-
+List will be printed and written to *item_list.txt*  
+  
+Game List:  
+CSGO  
+Dota  
+PUBG  
 
 Note:
 There is a limit of Steam requests.
