@@ -2,7 +2,7 @@
 A Simple Web Crawler
 
 Run
-```shell
+```sh
 python SteamDataRetrieve.py
 ```
 
