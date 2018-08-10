@@ -11,8 +11,8 @@ List will be printed and written to *item_list.txt*
   
 ### Game List  
 CSGO  
-Dota  
-PUBG  
+Dota (not available right now) 
+PUBG (not available right now)  
 
 ### Dependencies
 * urllib3 (for python3)  
