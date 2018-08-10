@@ -11,7 +11,7 @@ List will be printed and written to *item_list.txt*
   
 ### Game List  
 CSGO  
-Dota (not available right now) 
+Dota (not available right now)  
 PUBG (not available right now)  
 
 ### Dependencies
