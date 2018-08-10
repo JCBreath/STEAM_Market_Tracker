@@ -5,7 +5,6 @@ import shutil
 import re
 import lxml
 import sys
-from bs4 import BeautifulSoup
 
 def getHtml(url):
     head = {}
