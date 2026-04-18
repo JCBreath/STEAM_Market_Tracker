@@ -113,11 +113,20 @@ def stats() -> Dict:
     return {"total": total, "by_category": by_cat, "last_updated": last_upd}
 
 
+_SORT_MAP = {
+    "name":          "name COLLATE NOCASE",
+    "price_asc":     "sell_price_usd ASC NULLS LAST",
+    "price_desc":    "sell_price_usd DESC NULLS LAST",
+    "listings_desc": "sell_listings DESC NULLS LAST",
+}
+
+
 def query(
     search: str = "",
     category: str = "",
     limit: int = 200,
     offset: int = 0,
+    sort_by: str = "name",
 ) -> List[Dict]:
     conn = _conn()
     clauses, params = [], []
@@ -128,8 +137,9 @@ def query(
         clauses.append("category_type = ?")
         params.append(category)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    order = _SORT_MAP.get(sort_by, "name COLLATE NOCASE")
     rows = conn.execute(
-        f"SELECT * FROM items {where} ORDER BY name COLLATE NOCASE LIMIT ? OFFSET ?",
+        f"SELECT * FROM items {where} ORDER BY {order} LIMIT ? OFFSET ?",
         params + [limit, offset],
     ).fetchall()
     return [dict(r) for r in rows]
@@ -146,6 +156,30 @@ def count(search: str = "", category: str = "") -> int:
         params.append(category)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return conn.execute(f"SELECT COUNT(*) FROM items {where}", params).fetchone()[0]
+
+
+_PRICE_BUCKETS = [
+    ("< $1",      0,    1),
+    ("$1–$5",     1,    5),
+    ("$5–$10",    5,   10),
+    ("$10–$50",  10,   50),
+    ("$50–$100", 50,  100),
+    ("$100–$500",100,  500),
+    ("≥ $500",   500,  1e18),
+]
+
+
+def price_dist() -> List[Dict]:
+    """Return item counts per price bucket."""
+    conn = _conn()
+    result = []
+    for label, lo, hi in _PRICE_BUCKETS:
+        n = conn.execute(
+            "SELECT COUNT(*) FROM items WHERE sell_price_usd >= ? AND sell_price_usd < ?",
+            (lo, hi),
+        ).fetchone()[0]
+        result.append({"label": label, "count": n})
+    return result
 
 
 def export_csv(path: str) -> int:

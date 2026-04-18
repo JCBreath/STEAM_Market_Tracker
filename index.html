@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>STEAM Market Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
   <style>
     :root {
       --bg:       #171a21;
@@ -247,6 +248,11 @@
     details > summary:hover { color: var(--text); }
     details .inner { padding: 10px 0 4px 0; }
 
+    /* ── Viz charts ── */
+    .chart-wrap {
+      position: relative; height: 280px;
+    }
+
     /* ── Misc ── */
     .sep { height: 1px; background: var(--border); margin: 14px 0; }
     .flex-gap { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
@@ -275,6 +281,7 @@
   <button class="tab-btn"        data-tab="bulk"    onclick="switchTab('bulk')">📦 Bulk Scrape</button>
   <button class="tab-btn"        data-tab="files"   onclick="switchTab('files')">📁 Files</button>
   <button class="tab-btn"        data-tab="history" onclick="switchTab('history')">📋 History</button>
+  <button class="tab-btn"        data-tab="viz"     onclick="switchTab('viz')">📊 Database</button>
 </nav>
 
 <main>
@@ -574,6 +581,74 @@
     </div>
   </div>
 
+  <!-- ═══════════════════ VIZ TAB ═══════════════════ -->
+  <div class="tab-pane" id="tab-viz">
+
+    <!-- Overview stats + charts -->
+    <div class="card">
+      <div class="flex-gap" style="margin-bottom:14px">
+        <div class="card-title" style="margin:0">数据库概览</div>
+        <button class="btn btn-ghost btn-sm ml-auto" onclick="loadViz()">⟳ 刷新</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportDb('csv')">⬇ CSV</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportDb('json')">⬇ JSON</button>
+      </div>
+      <div id="viz-stats-row" class="stats-row" style="margin-bottom:20px">
+        <div class="empty-state">加载中…</div>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap">
+        <div style="flex:1;min-width:280px">
+          <div style="font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">分类分布</div>
+          <div class="chart-wrap"><canvas id="viz-cat-canvas"></canvas></div>
+        </div>
+        <div style="flex:1;min-width:280px">
+          <div style="font-size:11px;font-weight:600;color:var(--dim);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">价格分布</div>
+          <div class="chart-wrap"><canvas id="viz-price-canvas"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DB Browser -->
+    <div class="card">
+      <div class="card-title">浏览数据库</div>
+      <div class="filter-row" style="flex-wrap:wrap;gap:8px">
+        <input type="text" id="viz-search" placeholder="搜索名称…"
+               style="flex:1;min-width:160px" oninput="debounceVizSearch()">
+        <select id="viz-cat-filter" style="min-width:160px" onchange="vizReload()">
+          <option value="">全部分类</option>
+        </select>
+        <select id="viz-sort-sel" style="min-width:150px" onchange="vizReload()">
+          <option value="name">名称 A→Z</option>
+          <option value="price_asc">价格 低→高</option>
+          <option value="price_desc">价格 高→低</option>
+          <option value="listings_desc">挂单数 多→少</option>
+        </select>
+        <span class="count-label" id="viz-count"></span>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th>名称</th>
+              <th>分类</th>
+              <th>价格</th>
+              <th>挂单数</th>
+              <th>更新时间</th>
+            </tr>
+          </thead>
+          <tbody id="viz-tbody">
+            <tr><td colspan="5" class="empty-state">请先 Build Library 或切换到此标签触发加载。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" id="viz-prev-btn" onclick="vizPage(-1)" disabled>◀ 上一页</button>
+        <span id="viz-page-info" style="font-size:12px;color:var(--dim)"></span>
+        <button class="btn btn-ghost btn-sm" id="viz-next-btn" onclick="vizPage(1)" disabled>下一页 ▶</button>
+      </div>
+    </div>
+
+  </div>
+
 </main>
 
 <script>
@@ -643,6 +718,7 @@ function switchTab(name) {
     p.classList.toggle('active', p.id === 'tab-' + name));
   if (name === 'files') loadFiles();
   if (name === 'history') loadHistory();
+  if (name === 'viz') loadViz();
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1407,6 +1483,188 @@ async function loadHistory() {
 $('s-query').addEventListener('keydown', e => {
   if (e.key === 'Enter') startSearch();
 });
+
+// ══════════════════════════════════════════════════════════════════════════
+// DATABASE VISUALIZATION
+// ══════════════════════════════════════════════════════════════════════════
+
+let _vizCatChart = null;
+let _vizPriceChart = null;
+let _vizPage = 0;
+const VIZ_PAGE_SIZE = 50;
+let _vizTotal = 0;
+let _vizSearchTimer = null;
+
+const CHART_CFG = {
+  color:  '#7e96ac',
+  grid:   'rgba(45,77,106,0.5)',
+  accent: '#1a9fff',
+};
+
+async function loadViz() {
+  await Promise.all([loadVizStats(), loadVizTable()]);
+}
+
+async function loadVizStats() {
+  try {
+    const [stats, priceDist] = await Promise.all([
+      api('GET', '/api/db/stats'),
+      api('GET', '/api/db/price_dist'),
+    ]);
+
+    const lastUpd = stats.last_updated
+      ? new Date(stats.last_updated * 1000).toLocaleString() : '–';
+    $('viz-stats-row').innerHTML = `
+      <div class="stat">
+        <span class="stat-label">总条目</span>
+        <span class="stat-val" style="color:var(--accent)">${stats.total.toLocaleString()}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">分类数</span>
+        <span class="stat-val">${stats.by_category.length}</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">最近更新</span>
+        <span class="stat-val" style="font-size:13px">${lastUpd}</span>
+      </div>`;
+
+    // Populate category filter
+    const sel = $('viz-cat-filter');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="">全部分类</option>';
+    stats.by_category.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.category_type || '';
+      o.textContent = `${c.category_type || '未知'} (${c.count.toLocaleString()})`;
+      sel.appendChild(o);
+    });
+    sel.value = prev;
+
+    _renderCatChart(stats.by_category);
+    _renderPriceChart(priceDist);
+  } catch (e) {
+    $('viz-stats-row').innerHTML = `<span style="color:var(--danger)">${e.message}</span>`;
+  }
+}
+
+function _renderCatChart(byCategory) {
+  const sorted = [...byCategory].sort((a, b) => b.count - a.count);
+  const ctx = $('viz-cat-canvas').getContext('2d');
+  if (_vizCatChart) _vizCatChart.destroy();
+  _vizCatChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: sorted.map(c => c.category_type || '未知'),
+      datasets: [{
+        data: sorted.map(c => c.count),
+        backgroundColor: 'rgba(26,159,255,0.6)',
+        borderColor: 'rgba(26,159,255,1)',
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.raw.toLocaleString()} 条` } },
+      },
+      scales: {
+        x: { grid: { color: CHART_CFG.grid }, ticks: { color: CHART_CFG.color, font: { size: 11 } } },
+        y: { grid: { display: false },        ticks: { color: CHART_CFG.color, font: { size: 11 } } },
+      },
+    },
+  });
+}
+
+function _renderPriceChart(priceDist) {
+  const ctx = $('viz-price-canvas').getContext('2d');
+  if (_vizPriceChart) _vizPriceChart.destroy();
+  const colors = priceDist.map((_, i) => `hsla(${195 + i * 18}, 75%, 55%, 0.72)`);
+  _vizPriceChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: priceDist.map(b => b.label),
+      datasets: [{
+        data: priceDist.map(b => b.count),
+        backgroundColor: colors,
+        borderColor: colors.map(c => c.replace('0.72', '1')),
+        borderWidth: 1,
+        borderRadius: 3,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => ` ${c.raw.toLocaleString()} 条` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { color: CHART_CFG.color, font: { size: 11 } } },
+        y: { grid: { color: CHART_CFG.grid }, ticks: { color: CHART_CFG.color, font: { size: 11 } } },
+      },
+    },
+  });
+}
+
+function debounceVizSearch() {
+  clearTimeout(_vizSearchTimer);
+  _vizSearchTimer = setTimeout(() => { _vizPage = 0; loadVizTable(); }, 300);
+}
+
+function vizReload() { _vizPage = 0; loadVizTable(); }
+
+function vizPage(dir) {
+  const maxPage = Math.ceil(_vizTotal / VIZ_PAGE_SIZE) - 1;
+  const next = _vizPage + dir;
+  if (next < 0 || next > maxPage) return;
+  _vizPage = next;
+  loadVizTable();
+}
+
+async function loadVizTable() {
+  const params = new URLSearchParams({
+    search:   ($('viz-search').value || '').trim(),
+    category: $('viz-cat-filter').value,
+    sort_by:  $('viz-sort-sel').value,
+    limit:    VIZ_PAGE_SIZE,
+    offset:   _vizPage * VIZ_PAGE_SIZE,
+  });
+  try {
+    const { items, total } = await api('GET', `/api/db/items?${params}`);
+    _vizTotal = total;
+    const tbody = $('viz-tbody');
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">暂无数据</td></tr>';
+    } else {
+      tbody.innerHTML = items.map(it => {
+        const price = it.sell_price_text || (it.sell_price_usd != null ? `$${it.sell_price_usd.toFixed(2)}` : '–');
+        const listings = it.sell_listings != null ? it.sell_listings.toLocaleString() : '–';
+        const upd = it.last_updated ? new Date(it.last_updated * 1000).toLocaleDateString() : '–';
+        return `<tr>
+          <td class="name-cell">
+            ${escHtml(it.name)}
+            <button class="copy-btn" title="Copy" onclick="copyText(${JSON.stringify(it.name)})">⎘</button>
+          </td>
+          <td style="color:var(--dim);font-size:12px">${escHtml(it.category_type || '–')}</td>
+          <td class="price-cell">${escHtml(price)}</td>
+          <td class="listings-cell">${listings}</td>
+          <td style="color:var(--dim);font-size:12px">${upd}</td>
+        </tr>`;
+      }).join('');
+    }
+    const totalPages = Math.max(1, Math.ceil(total / VIZ_PAGE_SIZE));
+    $('viz-count').textContent = `共 ${total.toLocaleString()} 条`;
+    $('viz-page-info').textContent = `第 ${_vizPage + 1} / ${totalPages} 页`;
+    $('viz-prev-btn').disabled = _vizPage === 0;
+    $('viz-next-btn').disabled = _vizPage >= totalPages - 1;
+  } catch (e) {
+    $('viz-tbody').innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--danger)">${e.message}</td></tr>`;
+  }
+}
 </script>
 </body>
 </html>

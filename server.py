@@ -674,13 +674,20 @@ def db_stats():
 def db_items(
     search: str = Query(""),
     category: str = Query(""),
+    sort_by: str = Query("name"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
     return {
-        "items": _db.query(search=search, category=category, limit=limit, offset=offset),
+        "items": _db.query(search=search, category=category,
+                           sort_by=sort_by, limit=limit, offset=offset),
         "total": _db.count(search=search, category=category),
     }
+
+
+@app.get("/api/db/price_dist")
+def db_price_dist():
+    return _db.price_dist()
 
 
 @app.post("/api/db/export")
