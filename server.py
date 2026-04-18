@@ -93,7 +93,7 @@ import re as _re
 import db as _db
 _db.init()
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
@@ -688,6 +688,71 @@ def db_items(
 @app.get("/api/db/price_dist")
 def db_price_dist():
     return _db.price_dist()
+
+
+@app.post("/api/db/import_csv")
+async def import_csv_route(
+    file: UploadFile = File(...),
+    mapping: str = Form(...),       # JSON {db_field: csv_col_name}
+    category_type: str = Form(""),  # fixed label applied to all rows
+):
+    import csv as _csv
+    import io
+    from types import SimpleNamespace
+
+    try:
+        col_map: dict = json.loads(mapping)
+    except Exception:
+        raise HTTPException(400, "Invalid mapping JSON")
+
+    raw = await file.read()
+    text = None
+    for enc in ("utf-8-sig", "gbk", "utf-8"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        raise HTTPException(400, "Cannot decode file (tried utf-8-sig, gbk, utf-8)")
+
+    def _get(row: dict, field: str):
+        col = col_map.get(field, "")
+        return row.get(col, "").strip() if col else None
+
+    skins = []
+    for row in _csv.DictReader(io.StringIO(text)):
+        name = _get(row, "name") or _get(row, "hash_name") or ""
+        if not name:
+            continue
+
+        price_usd = None
+        pstr = _get(row, "sell_price_usd")
+        if pstr:
+            try:
+                price_usd = float(pstr.replace(",", "").replace("¥", "").replace("$", "").strip())
+            except ValueError:
+                pass
+
+        listings = None
+        lstr = _get(row, "sell_listings")
+        if lstr:
+            try:
+                listings = int(lstr.replace(",", "").strip())
+            except ValueError:
+                pass
+
+        skins.append(SimpleNamespace(
+            hash_name=_get(row, "hash_name") or name,
+            name=name,
+            sell_price_text=_get(row, "sell_price_text"),
+            sell_price_usd=price_usd,
+            sell_listings=listings,
+            item_type=_get(row, "item_type"),
+        ))
+
+    n = _db.upsert(skins, category_type=category_type.strip() or None)
+    return {"imported": n, "skipped": len(skins) - n}
 
 
 @app.post("/api/db/export")

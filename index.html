@@ -607,6 +607,37 @@
       </div>
     </div>
 
+    <!-- BUFF CSV Import -->
+    <div class="card">
+      <div class="card-title">导入 BUFF CSV</div>
+      <div class="row" style="margin-bottom:14px">
+        <div class="field" style="flex:1">
+          <label>选择 CSV 文件（支持 UTF-8 / GBK 编码）</label>
+          <input type="file" id="import-file" accept=".csv"
+                 style="color:var(--text);font-size:13px"
+                 onchange="onImportFileChange()">
+        </div>
+      </div>
+
+      <div id="import-mapping" class="hidden">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:10px">
+          将 CSV 列与数据库字段对应（<span style="color:var(--warn)">名称*</span> 为必填，其余可跳过）
+        </div>
+        <div id="import-mapping-rows"
+             style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px">
+        </div>
+        <div class="sep"></div>
+        <div class="row" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
+          <div class="field" style="flex:1;min-width:200px">
+            <label>分类标签（所有导入行统一赋值，可留空）</label>
+            <input type="text" id="import-category" placeholder="e.g. CSGO_Type_Pistol">
+          </div>
+          <button class="btn btn-primary" onclick="doImport()">⬆ 导入到数据库</button>
+        </div>
+        <div id="import-result" style="margin-top:10px;font-size:13px"></div>
+      </div>
+    </div>
+
     <!-- DB Browser -->
     <div class="card">
       <div class="card-title">浏览数据库</div>
@@ -1623,6 +1654,111 @@ function vizPage(dir) {
   if (next < 0 || next > maxPage) return;
   _vizPage = next;
   loadVizTable();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// BUFF CSV IMPORT
+// ══════════════════════════════════════════════════════════════════════════
+
+const IMPORT_FIELDS = [
+  { key: 'name',            label: '物品名称 *' },
+  { key: 'hash_name',       label: 'Hash 名称' },
+  { key: 'sell_price_text', label: '价格文本（带符号）' },
+  { key: 'sell_price_usd',  label: '价格（纯数字）' },
+  { key: 'sell_listings',   label: '挂单数' },
+  { key: 'item_type',       label: '物品类型' },
+];
+
+// Common BUFF column name hints for auto-matching
+const IMPORT_HINTS = {
+  name:            ['商品名称', '名称', 'name', 'item_name', '物品名称'],
+  hash_name:       ['hash_name', 'hash name', 'hash'],
+  sell_price_text: ['参考价格', '价格文本', 'price_text', '价格'],
+  sell_price_usd:  ['参考价', '最低售价', '单价', 'price', 'sell_price', '现价'],
+  sell_listings:   ['在售数量', '挂单数', 'listings', 'sell_listings', '数量'],
+  item_type:       ['类型', 'type', 'item_type', '物品类型'],
+};
+
+let _importHeaders = [];
+
+function onImportFileChange() {
+  const file = $('import-file').files[0];
+  if (!file) return;
+  $('import-result').textContent = '';
+  const reader = new FileReader();
+  reader.onload = e => {
+    _importHeaders = _parseCsvFirstRow(e.target.result);
+    _renderImportMapping();
+    $('import-mapping').classList.remove('hidden');
+  };
+  reader.readAsText(file, 'utf-8');
+}
+
+function _parseCsvFirstRow(text) {
+  text = text.replace(/^\uFEFF/, '');          // strip BOM
+  const line = text.split(/\r?\n/)[0] || '';
+  const cols = [];
+  let inQ = false, cur = '';
+  for (const c of line) {
+    if (c === '"')            inQ = !inQ;
+    else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+    else                        cur += c;
+  }
+  cols.push(cur.trim());
+  return cols;
+}
+
+function _guessCol(fieldKey) {
+  const hints = IMPORT_HINTS[fieldKey] || [];
+  return (
+    _importHeaders.find(h => hints.some(hint => h === hint)) ||
+    _importHeaders.find(h => hints.some(hint => h.toLowerCase().includes(hint.toLowerCase()))) ||
+    ''
+  );
+}
+
+function _renderImportMapping() {
+  $('import-mapping-rows').innerHTML = IMPORT_FIELDS.map(f => {
+    const guessed = _guessCol(f.key);
+    const opts = ['', ..._importHeaders].map(h =>
+      `<option value="${escHtml(h)}"${h === guessed ? ' selected' : ''}>${escHtml(h) || '-- 跳过 --'}</option>`
+    ).join('');
+    return `<div class="field">
+      <label>${escHtml(f.label)}</label>
+      <select id="imp-${f.key}">${opts}</select>
+    </div>`;
+  }).join('');
+}
+
+async function doImport() {
+  const file = $('import-file').files[0];
+  if (!file) return;
+  if (!$('imp-name').value) {
+    $('import-result').innerHTML = '<span style="color:var(--danger)">请选择"物品名称"对应的列。</span>';
+    return;
+  }
+  const mapping = {};
+  IMPORT_FIELDS.forEach(f => {
+    const v = $(`imp-${f.key}`).value;
+    if (v) mapping[f.key] = v;
+  });
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('mapping', JSON.stringify(mapping));
+  fd.append('category_type', $('import-category').value.trim());
+
+  $('import-result').innerHTML = '<span style="color:var(--dim)">导入中…</span>';
+  try {
+    const r = await fetch('/api/db/import_csv', { method: 'POST', body: fd });
+    if (!r.ok) { const t = await r.text(); throw new Error(t); }
+    const { imported, skipped } = await r.json();
+    $('import-result').innerHTML =
+      `<span style="color:var(--success)">✓ 成功导入 ${imported.toLocaleString()} 条</span>` +
+      (skipped ? `<span style="color:var(--dim);margin-left:8px">（${skipped} 行因缺少名称被跳过）</span>` : '');
+    loadVizStats();
+  } catch (e) {
+    $('import-result').innerHTML = `<span style="color:var(--danger)">导入失败：${e.message}</span>`;
+  }
 }
 
 async function loadVizTable() {
