@@ -693,8 +693,7 @@ def db_price_dist():
 @app.post("/api/db/import_csv")
 async def import_csv_route(
     file: UploadFile = File(...),
-    mapping: str = Form(...),       # JSON {db_field: csv_col_name}
-    category_type: str = Form(""),  # fixed label applied to all rows
+    mapping: str = Form(...),   # JSON {db_field: csv_col_name}
 ):
     import csv as _csv
     import io
@@ -761,7 +760,7 @@ async def import_csv_route(
             buff_price=buff_price,
         ))
 
-    n = _db.upsert(skins, category_type=category_type.strip() or None)
+    n = _db.upsert_buff_prices(skins)
     return {"imported": n, "skipped": len(skins) - n}
 
 

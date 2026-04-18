@@ -627,12 +627,9 @@
              style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-bottom:14px">
         </div>
         <div class="sep"></div>
-        <div class="row" style="align-items:flex-end;gap:10px;flex-wrap:wrap">
-          <div class="field" style="flex:1;min-width:200px">
-            <label>分类标签（所有导入行统一赋值，可留空）</label>
-            <input type="text" id="import-category" placeholder="e.g. CSGO_Type_Pistol">
-          </div>
+        <div class="row">
           <button class="btn btn-primary" onclick="doImport()">⬆ 导入到数据库</button>
+          <span style="font-size:12px;color:var(--dim);margin-left:6px">仅写入 BUFF 价格，已有 Steam 数据完全不变</span>
         </div>
         <div id="import-result" style="margin-top:10px;font-size:13px"></div>
       </div>
@@ -1748,7 +1745,6 @@ async function doImport() {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('mapping', JSON.stringify(mapping));
-  fd.append('category_type', $('import-category').value.trim());
 
   $('import-result').innerHTML = '<span style="color:var(--dim)">导入中…</span>';
   try {

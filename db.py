@@ -74,6 +74,40 @@ _UPSERT_SQL = """
 """
 
 
+_BUFF_UPSERT_SQL = """
+    INSERT INTO items (hash_name, name, buff_price, last_updated)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(hash_name) DO UPDATE SET
+      buff_price   = excluded.buff_price,
+      last_updated = excluded.last_updated
+"""
+
+
+def upsert_buff_prices(skins) -> int:
+    """Update only buff_price (and last_updated) for matched items.
+    New items are inserted with name + buff_price; all other fields stay NULL."""
+    if not skins:
+        return 0
+    now = time.time()
+    rows = [
+        (
+            getattr(s, "hash_name", None) or getattr(s, "name", ""),
+            getattr(s, "name", ""),
+            getattr(s, "buff_price", None),
+            now,
+        )
+        for s in skins
+        if getattr(s, "buff_price", None) is not None   # skip rows with no price
+    ]
+    if not rows:
+        return 0
+    with _write_lock:
+        conn = _conn()
+        conn.executemany(_BUFF_UPSERT_SQL, rows)
+        conn.commit()
+    return len(rows)
+
+
 def upsert(skins, category_type: Optional[str] = None) -> int:
     """
     Upsert a list of SteamSkin (or MarketItem) objects into the database.
