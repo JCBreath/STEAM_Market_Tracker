@@ -698,6 +698,7 @@ async def import_csv_route(
 ):
     import csv as _csv
     import io
+    import re as _re
     from types import SimpleNamespace
 
     try:
@@ -720,35 +721,35 @@ async def import_csv_route(
         col = col_map.get(field, "")
         return row.get(col, "").strip() if col else None
 
+    def _parse_float(s: str):
+        """Extract first decimal number from a string like '楼 536.3' or '$12.50'."""
+        if not s:
+            return None
+        m = _re.search(r"[\d,]*\.?\d+", s.replace(",", ""))
+        try:
+            return float(m.group().replace(",", "")) if m else None
+        except (ValueError, AttributeError):
+            return None
+
+    def _parse_int(s: str):
+        """Extract first integer from a string like '17 on sale'."""
+        if not s:
+            return None
+        m = _re.search(r"\d+", s)
+        try:
+            return int(m.group()) if m else None
+        except (ValueError, AttributeError):
+            return None
+
     skins = []
     for row in _csv.DictReader(io.StringIO(text)):
         name = _get(row, "name") or _get(row, "hash_name") or ""
         if not name:
             continue
 
-        price_usd = None
-        pstr = _get(row, "sell_price_usd")
-        if pstr:
-            try:
-                price_usd = float(pstr.replace(",", "").replace("¥", "").replace("$", "").strip())
-            except ValueError:
-                pass
-
-        listings = None
-        lstr = _get(row, "sell_listings")
-        if lstr:
-            try:
-                listings = int(lstr.replace(",", "").strip())
-            except ValueError:
-                pass
-
-        buff_price = None
-        bstr = _get(row, "buff_price")
-        if bstr:
-            try:
-                buff_price = float(bstr.replace(",", "").replace("¥", "").replace("$", "").strip())
-            except ValueError:
-                pass
+        price_usd  = _parse_float(_get(row, "sell_price_usd"))
+        listings   = _parse_int(_get(row, "sell_listings"))
+        buff_price = _parse_float(_get(row, "buff_price"))
 
         skins.append(SimpleNamespace(
             hash_name=_get(row, "hash_name") or name,
