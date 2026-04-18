@@ -196,57 +196,65 @@ class SteamMarketScraper:
         start_offset: int = 0,
         output_file: str = None,
         save_format: str = "csv",
+        category_type: str = None,
+        weapon_tag: str = None,
+        on_page=None,
     ) -> List[SteamSkin]:
+        """on_page(skins): called after each page with that page's SteamSkin list."""
         """
-        Fetch all CS:GO weapon skins from Steam Market.
-        
+        Fetch CS:GO skins from Steam Market.
+
         Args:
             max_items: Maximum number of items to fetch (None for all)
             start_offset: Starting offset for pagination
-            output_file: File to save results incrementally (None to skip incremental saves)
-            save_format: Format for incremental saves ("csv" or "json")
-            
-        Returns:
-            List of SteamSkin objects
+            output_file: File to save results incrementally
+            save_format: "csv" or "jsonl"
+            category_type: Steam type tag, e.g. "CSGO_Type_Pistol"
+            weapon_tag: Steam weapon tag, e.g. "weapon_ak47"
         """
         all_skins = []
-        count_per_page = 100  # Steam's max
+        count_per_page = 10
         current_offset = start_offset
         total_count = None
         first_page = True
-        
-        print(f"Starting scrape of CS:GO weapon skins from Steam Market...")
-        print(f"Fetching {count_per_page} items per page with {self.delay_min}-{self.delay_max}s delay")
+        use_keyword_filter = (category_type is None and weapon_tag is None)
+
+        label = category_type or weapon_tag or "all items"
+        print(f"Starting scrape: {label}")
+        print(f"Delay: {self.delay_min}-{self.delay_max}s per page")
         if output_file:
-            print(f"Incremental saves enabled to: {output_file}")
+            print(f"Saving to: {output_file}")
         print()
-        
+
         rate_limit_retries = 0
         while True:
-            # Check if we've reached max_items
             if max_items and len(all_skins) >= max_items:
                 print(f"\nReached max_items limit ({max_items})")
                 break
-            
-            # Build request parameters
-            params = {
-                "appid": CSGO_APP_ID,
-                "norender": 1,  # Return JSON instead of HTML
-                "count": count_per_page,
-                "start": current_offset,
-                "sort_column": "popular",
-                "sort_dir": "desc",
-                "currency": 1,  # USD
-            }
-            
-            url = f"{STEAM_MARKET_SEARCH_URL}?{urlencode(params)}"
-            
+
+            # Build request parameters as list of tuples to support [] keys
+            params = [
+                ("appid", CSGO_APP_ID),
+                ("norender", 1),
+                ("count", count_per_page),
+                ("start", current_offset),
+                ("sort_column", "popular"),
+                ("sort_dir", "desc"),
+                ("currency", 1),
+            ]
+            if category_type:
+                params.append(("category_730_Type[]", f"tag_{category_type}"))
+            if weapon_tag:
+                params.append(("category_730_Weapon[]", f"tag_{weapon_tag}"))
+
             try:
-                # Add delay before request
                 if self.total_requests > 0:
                     self._delay()
-                
-                response = self.session.get(url, headers=self._get_headers(), timeout=15)
+
+                response = self.session.get(
+                    STEAM_MARKET_SEARCH_URL, params=params,
+                    headers=self._get_headers(), timeout=15
+                )
                 self.total_requests += 1
                 
                 if response.status_code == 429:
@@ -297,8 +305,8 @@ class SteamMarketScraper:
                     name = item.get("name", "")
                     hash_name = item.get("hash_name", "")
                     
-                    # Filter for weapon skins only
-                    if not self._is_weapon_skin(name):
+                    # When no category filter given, restrict to weapon skins only
+                    if use_keyword_filter and not self._is_weapon_skin(name):
                         continue
                     
                     # Parse price
@@ -335,15 +343,18 @@ class SteamMarketScraper:
                       f"Weapon skins: {page_skins:3d} | Total collected: {len(all_skins):5d} | "
                       f"Requests: {self.total_requests}")
                 
-                # Incremental save after each page
-                if output_file and page_skins > 0:
-                    # Get just the new skins from this page
+                # Incremental save / callback after each page
+                if page_skins > 0:
                     page_skins_list = all_skins[-page_skins:]
-                    if save_format == "csv":
-                        append_to_csv(page_skins_list, output_file, write_header=first_page)
-                        first_page = False
-                    elif save_format in ["json", "jsonl"]:
-                        append_to_jsonl(page_skins_list, output_file)
+                    if output_file:
+                        if save_format == "csv":
+                            append_to_csv(page_skins_list, output_file, write_header=first_page)
+                            first_page = False
+                        elif save_format in ["json", "jsonl"]:
+                            append_to_jsonl(page_skins_list, output_file)
+                    if on_page:
+                        # Pass current_offset so callers can checkpoint resume position
+                        on_page(page_skins_list, current_offset)
                 
                 # Move to next page
                 current_offset += count_per_page
