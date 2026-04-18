@@ -64,12 +64,12 @@ _UPSERT_SQL = """
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(hash_name) DO UPDATE SET
       name            = excluded.name,
-      sell_price_text = excluded.sell_price_text,
-      sell_price_usd  = excluded.sell_price_usd,
-      sell_listings   = excluded.sell_listings,
-      item_type       = excluded.item_type,
-      category_type   = COALESCE(excluded.category_type, items.category_type),
-      buff_price      = COALESCE(excluded.buff_price, items.buff_price),
+      sell_price_text = COALESCE(excluded.sell_price_text, items.sell_price_text),
+      sell_price_usd  = COALESCE(excluded.sell_price_usd,  items.sell_price_usd),
+      sell_listings   = COALESCE(excluded.sell_listings,   items.sell_listings),
+      item_type       = COALESCE(excluded.item_type,       items.item_type),
+      category_type   = COALESCE(excluded.category_type,   items.category_type),
+      buff_price      = COALESCE(excluded.buff_price,      items.buff_price),
       last_updated    = excluded.last_updated
 """
 
