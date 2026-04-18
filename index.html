@@ -661,13 +661,14 @@
             <tr>
               <th>名称</th>
               <th>分类</th>
-              <th>价格</th>
+              <th>Steam 价格</th>
+              <th>BUFF 价格</th>
               <th>挂单数</th>
               <th>更新时间</th>
             </tr>
           </thead>
           <tbody id="viz-tbody">
-            <tr><td colspan="5" class="empty-state">请先 Build Library 或切换到此标签触发加载。</td></tr>
+            <tr><td colspan="6" class="empty-state">请先 Build Library 或切换到此标签触发加载。</td></tr>
           </tbody>
         </table>
       </div>
@@ -1667,6 +1668,7 @@ const IMPORT_FIELDS = [
   { key: 'sell_price_usd',  label: '价格（纯数字）' },
   { key: 'sell_listings',   label: '挂单数' },
   { key: 'item_type',       label: '物品类型' },
+  { key: 'buff_price',      label: 'BUFF 参考价' },
 ];
 
 // Common BUFF column name hints for auto-matching
@@ -1677,6 +1679,7 @@ const IMPORT_HINTS = {
   sell_price_usd:  ['参考价', '最低售价', '单价', 'price', 'sell_price', '现价'],
   sell_listings:   ['在售数量', '挂单数', 'listings', 'sell_listings', '数量'],
   item_type:       ['类型', 'type', 'item_type', '物品类型'],
+  buff_price:      ['buff参考价', 'buff价格', 'buff price', 'buff_price', '参考价', '最新售价'],
 };
 
 let _importHeaders = [];
@@ -1774,10 +1777,11 @@ async function loadVizTable() {
     _vizTotal = total;
     const tbody = $('viz-tbody');
     if (!items.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">暂无数据</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" class="empty-state">暂无数据</td></tr>';
     } else {
       tbody.innerHTML = items.map(it => {
         const price = it.sell_price_text || (it.sell_price_usd != null ? `$${it.sell_price_usd.toFixed(2)}` : '–');
+        const buff  = it.buff_price != null ? `¥${it.buff_price.toFixed(2)}` : '–';
         const listings = it.sell_listings != null ? it.sell_listings.toLocaleString() : '–';
         const upd = it.last_updated ? new Date(it.last_updated * 1000).toLocaleDateString() : '–';
         return `<tr>
@@ -1787,6 +1791,7 @@ async function loadVizTable() {
           </td>
           <td style="color:var(--dim);font-size:12px">${escHtml(it.category_type || '–')}</td>
           <td class="price-cell">${escHtml(price)}</td>
+          <td style="color:#f0c060;font-variant-numeric:tabular-nums">${buff}</td>
           <td class="listings-cell">${listings}</td>
           <td style="color:var(--dim);font-size:12px">${upd}</td>
         </tr>`;
@@ -1798,7 +1803,7 @@ async function loadVizTable() {
     $('viz-prev-btn').disabled = _vizPage === 0;
     $('viz-next-btn').disabled = _vizPage >= totalPages - 1;
   } catch (e) {
-    $('viz-tbody').innerHTML = `<tr><td colspan="5" class="empty-state" style="color:var(--danger)">${e.message}</td></tr>`;
+    $('viz-tbody').innerHTML = `<tr><td colspan="6" class="empty-state" style="color:var(--danger)">${e.message}</td></tr>`;
   }
 }
 </script>

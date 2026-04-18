@@ -43,9 +43,15 @@ def init() -> None:
             sell_listings   INTEGER,
             item_type       TEXT,
             category_type   TEXT,
+            buff_price      REAL,
             last_updated    REAL NOT NULL
         )
     """)
+    # Migrate existing DBs that predate buff_price column
+    try:
+        conn.execute("ALTER TABLE items ADD COLUMN buff_price REAL")
+    except sqlite3.OperationalError:
+        pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_name ON items(name COLLATE NOCASE)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cat  ON items(category_type)")
     conn.commit()
@@ -54,8 +60,8 @@ def init() -> None:
 _UPSERT_SQL = """
     INSERT INTO items
       (hash_name, name, sell_price_text, sell_price_usd,
-       sell_listings, item_type, category_type, last_updated)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       sell_listings, item_type, category_type, buff_price, last_updated)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(hash_name) DO UPDATE SET
       name            = excluded.name,
       sell_price_text = excluded.sell_price_text,
@@ -63,6 +69,7 @@ _UPSERT_SQL = """
       sell_listings   = excluded.sell_listings,
       item_type       = excluded.item_type,
       category_type   = COALESCE(excluded.category_type, items.category_type),
+      buff_price      = COALESCE(excluded.buff_price, items.buff_price),
       last_updated    = excluded.last_updated
 """
 
@@ -84,10 +91,11 @@ def upsert(skins, category_type: Optional[str] = None) -> int:
             hname,
             name,
             getattr(s, "sell_price_text", None),
-            getattr(s, "sell_price_usd", None),
+            getattr(s, "sell_price_usd",  None),
             getattr(s, "sell_listings",   None),
             getattr(s, "item_type",       None),
             category_type,
+            getattr(s, "buff_price",      None),
             now,
         ))
     with _write_lock:

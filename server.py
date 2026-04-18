@@ -742,6 +742,14 @@ async def import_csv_route(
             except ValueError:
                 pass
 
+        buff_price = None
+        bstr = _get(row, "buff_price")
+        if bstr:
+            try:
+                buff_price = float(bstr.replace(",", "").replace("¥", "").replace("$", "").strip())
+            except ValueError:
+                pass
+
         skins.append(SimpleNamespace(
             hash_name=_get(row, "hash_name") or name,
             name=name,
@@ -749,6 +757,7 @@ async def import_csv_route(
             sell_price_usd=price_usd,
             sell_listings=listings,
             item_type=_get(row, "item_type"),
+            buff_price=buff_price,
         ))
 
     n = _db.upsert(skins, category_type=category_type.strip() or None)
