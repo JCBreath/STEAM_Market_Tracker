@@ -67,7 +67,6 @@ class SteamSkin:
     asset_url: Optional[str] = None
     hash_name: Optional[str] = None
     item_type: Optional[str] = None  # Weapon, Knife, Gloves, etc.
-    steam_price_cny: Optional[float] = None
 
 
 class SteamMarketScraper:
@@ -200,7 +199,6 @@ class SteamMarketScraper:
         category_type: str = None,
         weapon_tag: str = None,
         on_page=None,
-        currency: int = 1,
         price_min: float = None,
         price_max: float = None,
     ) -> List[SteamSkin]:
@@ -244,7 +242,7 @@ class SteamMarketScraper:
                 ("start", current_offset),
                 ("sort_column", "popular"),
                 ("sort_dir", "desc"),
-                ("currency", currency),
+                ("currency", 1),
             ]
             if price_min is not None:
                 params.append(("lower_price", int(price_min * 100)))
@@ -325,8 +323,7 @@ class SteamMarketScraper:
                     # Create skin object
                     skin = SteamSkin(
                         name=name,
-                        sell_price_usd=price_val if currency == 1 else None,
-                        steam_price_cny=price_val if currency == 23 else None,
+                        sell_price_usd=price_val,
                         sell_price_text=sell_price_text,
                         sell_listings=item.get("sell_listings"),
                         asset_url=item.get("asset_description", {}).get("icon_url"),
