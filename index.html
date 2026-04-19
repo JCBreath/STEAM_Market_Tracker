@@ -35,9 +35,9 @@
       height: 100vh; overflow-y: auto; overflow-x: hidden;
       background: var(--panel); border-right: 1px solid var(--border);
       display: flex; flex-direction: column; flex-shrink: 0;
-      transition: margin-left .22s ease, min-width .22s ease, width .22s ease;
+      transition: margin-left .22s ease;
     }
-    #sidebar.collapsed { margin-left: calc(-1 * var(--sb-w)); min-width: 0; width: 0; }
+    #sidebar.collapsed { margin-left: calc(-1 * var(--sb-w)); }
 
     .sb-hdr {
       display: flex; align-items: center; justify-content: space-between;
