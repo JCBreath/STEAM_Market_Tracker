@@ -44,14 +44,20 @@ def init() -> None:
             item_type       TEXT,
             category_type   TEXT,
             buff_price      REAL,
+            steam_price_cny REAL,
+            steam_buff_ratio REAL,
             last_updated    REAL NOT NULL
         )
     """)
-    # Migrate existing DBs that predate buff_price column
-    try:
-        conn.execute("ALTER TABLE items ADD COLUMN buff_price REAL")
-    except sqlite3.OperationalError:
-        pass
+    for col, typedef in [
+        ("buff_price",      "REAL"),
+        ("steam_price_cny", "REAL"),
+        ("steam_buff_ratio","REAL"),
+    ]:
+        try:
+            conn.execute(f"ALTER TABLE items ADD COLUMN {col} {typedef}")
+        except sqlite3.OperationalError:
+            pass
     conn.execute("CREATE INDEX IF NOT EXISTS idx_name ON items(name COLLATE NOCASE)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cat  ON items(category_type)")
     conn.commit()
@@ -60,26 +66,38 @@ def init() -> None:
 _UPSERT_SQL = """
     INSERT INTO items
       (hash_name, name, sell_price_text, sell_price_usd,
-       sell_listings, item_type, category_type, buff_price, last_updated)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       sell_listings, item_type, category_type, buff_price,
+       steam_price_cny, steam_buff_ratio, last_updated)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(hash_name) DO UPDATE SET
-      name            = excluded.name,
-      sell_price_text = COALESCE(excluded.sell_price_text, items.sell_price_text),
-      sell_price_usd  = COALESCE(excluded.sell_price_usd,  items.sell_price_usd),
-      sell_listings   = COALESCE(excluded.sell_listings,   items.sell_listings),
-      item_type       = COALESCE(excluded.item_type,       items.item_type),
-      category_type   = COALESCE(excluded.category_type,   items.category_type),
-      buff_price      = COALESCE(excluded.buff_price,      items.buff_price),
-      last_updated    = excluded.last_updated
+      name             = excluded.name,
+      sell_price_text  = COALESCE(excluded.sell_price_text,  items.sell_price_text),
+      sell_price_usd   = COALESCE(excluded.sell_price_usd,   items.sell_price_usd),
+      sell_listings    = COALESCE(excluded.sell_listings,    items.sell_listings),
+      item_type        = COALESCE(excluded.item_type,        items.item_type),
+      category_type    = COALESCE(excluded.category_type,    items.category_type),
+      buff_price       = COALESCE(excluded.buff_price,       items.buff_price),
+      steam_price_cny  = COALESCE(excluded.steam_price_cny,  items.steam_price_cny),
+      steam_buff_ratio = CASE
+        WHEN COALESCE(excluded.steam_price_cny, items.steam_price_cny) IS NOT NULL
+         AND COALESCE(excluded.buff_price, items.buff_price) > 0
+        THEN ROUND(COALESCE(excluded.steam_price_cny, items.steam_price_cny) /
+                   COALESCE(excluded.buff_price, items.buff_price), 4)
+        ELSE items.steam_buff_ratio END,
+      last_updated     = excluded.last_updated
 """
 
 
 _BUFF_UPSERT_SQL = """
-    INSERT INTO items (hash_name, name, buff_price, last_updated)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO items (hash_name, name, buff_price, steam_buff_ratio, last_updated)
+    VALUES (?, ?, ?, NULL, ?)
     ON CONFLICT(hash_name) DO UPDATE SET
-      buff_price   = excluded.buff_price,
-      last_updated = excluded.last_updated
+      buff_price       = excluded.buff_price,
+      steam_buff_ratio = CASE
+        WHEN items.steam_price_cny IS NOT NULL AND excluded.buff_price > 0
+        THEN ROUND(items.steam_price_cny / excluded.buff_price, 4)
+        ELSE items.steam_buff_ratio END,
+      last_updated     = excluded.last_updated
 """
 
 
@@ -124,12 +142,14 @@ def upsert(skins, category_type: Optional[str] = None) -> int:
         rows.append((
             hname,
             name,
-            getattr(s, "sell_price_text", None),
-            getattr(s, "sell_price_usd",  None),
-            getattr(s, "sell_listings",   None),
-            getattr(s, "item_type",       None),
+            getattr(s, "sell_price_text",  None),
+            getattr(s, "sell_price_usd",   None),
+            getattr(s, "sell_listings",    None),
+            getattr(s, "item_type",        None),
             category_type,
-            getattr(s, "buff_price",      None),
+            getattr(s, "buff_price",       None),
+            getattr(s, "steam_price_cny",  None),
+            None,   # steam_buff_ratio — computed by SQL CASE
             now,
         ))
     with _write_lock:
@@ -160,6 +180,10 @@ _SORT_MAP = {
     "price_asc":     "sell_price_usd ASC NULLS LAST",
     "price_desc":    "sell_price_usd DESC NULLS LAST",
     "listings_desc": "sell_listings DESC NULLS LAST",
+    "cny_asc":       "steam_price_cny ASC NULLS LAST",
+    "cny_desc":      "steam_price_cny DESC NULLS LAST",
+    "ratio_asc":     "steam_buff_ratio ASC NULLS LAST",
+    "ratio_desc":    "steam_buff_ratio DESC NULLS LAST",
 }
 
 

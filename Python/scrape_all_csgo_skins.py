@@ -67,6 +67,7 @@ class SteamSkin:
     asset_url: Optional[str] = None
     hash_name: Optional[str] = None
     item_type: Optional[str] = None  # Weapon, Knife, Gloves, etc.
+    steam_price_cny: Optional[float] = None
 
 
 class SteamMarketScraper:
@@ -199,6 +200,7 @@ class SteamMarketScraper:
         category_type: str = None,
         weapon_tag: str = None,
         on_page=None,
+        currency: int = 1,
     ) -> List[SteamSkin]:
         """on_page(skins): called after each page with that page's SteamSkin list."""
         """
@@ -240,7 +242,7 @@ class SteamMarketScraper:
                 ("start", current_offset),
                 ("sort_column", "popular"),
                 ("sort_dir", "desc"),
-                ("currency", 1),
+                ("currency", currency),
             ]
             if category_type:
                 params.append(("category_730_Type[]", f"tag_{category_type}"))
@@ -309,21 +311,16 @@ class SteamMarketScraper:
                     if use_keyword_filter and not self._is_weapon_skin(name):
                         continue
                     
-                    # Parse price
+                    # Parse price — use raw cents integer, currency-agnostic
+                    cents = item.get("sell_price")
+                    price_val = cents / 100.0 if isinstance(cents, int) else None
                     sell_price_text = item.get("sell_price_text", "")
-                    sell_price_usd = None
-                    if sell_price_text:
-                        try:
-                            # Remove currency symbol and convert to float
-                            price_str = sell_price_text.replace("$", "").replace(",", "").strip()
-                            sell_price_usd = float(price_str)
-                        except (ValueError, AttributeError):
-                            pass
-                    
+
                     # Create skin object
                     skin = SteamSkin(
                         name=name,
-                        sell_price_usd=sell_price_usd,
+                        sell_price_usd=price_val if currency == 1 else None,
+                        steam_price_cny=price_val if currency == 23 else None,
                         sell_price_text=sell_price_text,
                         sell_listings=item.get("sell_listings"),
                         asset_url=item.get("asset_description", {}).get("icon_url"),

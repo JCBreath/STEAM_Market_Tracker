@@ -564,6 +564,7 @@ def _run_library(job: Job) -> None:
                     category_type=tag,
                     start_offset=start_offset,
                     on_page=on_page,
+                    currency=p.get("currency", 1),
                 )
                 # Mark category complete in checkpoint
                 completed.add(tag)
@@ -621,6 +622,7 @@ class LibraryParams(BaseModel):
     max_429_retries: int = 8
     retry_backoff_base: float = 15.0
     resume: bool = True   # if True, load checkpoint and skip completed categories
+    currency: int = 1     # 1=USD, 23=CNY
 
 
 class SearchParams(BaseModel):
