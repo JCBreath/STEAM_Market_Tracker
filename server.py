@@ -82,7 +82,7 @@ def _set_queue(q: Optional[Queue]) -> None:
 
 try:
     from csgo_market_tracker import MarketItem, MarketTracker, write_csv, write_json
-    from scrape_all_csgo_skins import SteamMarketScraper, SteamSkin, append_to_csv
+    from scrape_all_csgo_skins import SteamMarketScraper
 except ImportError as exc:
     _REAL_STDOUT.write(f"[ERROR] Import failed: {exc}\n")
     _REAL_STDOUT.write("[ERROR] Run server.py from inside STEAM_Market_Tracker/\n")
@@ -135,159 +135,36 @@ CATEGORIES = [
     {
         "group": "Weapons",
         "items": [
-            {
-                "id": "pistol", "name": "Pistol", "type_tag": "CSGO_Type_Pistol",
-                "approx": 450,
-                "weapons": [
-                    {"id": "weapon_deagle",       "name": "Desert Eagle"},
-                    {"id": "weapon_elite",         "name": "Dual Berettas"},
-                    {"id": "weapon_fiveseven",     "name": "Five-SeveN"},
-                    {"id": "weapon_glock",         "name": "Glock-18"},
-                    {"id": "weapon_hkp2000",       "name": "P2000"},
-                    {"id": "weapon_p250",          "name": "P250"},
-                    {"id": "weapon_usp_silencer",  "name": "USP-S"},
-                    {"id": "weapon_cz75a",         "name": "CZ75-Auto"},
-                    {"id": "weapon_tec9",          "name": "Tec-9"},
-                    {"id": "weapon_revolver",      "name": "R8 Revolver"},
-                ],
-            },
-            {
-                "id": "smg", "name": "SMG", "type_tag": "CSGO_Type_SMG",
-                "approx": 280,
-                "weapons": [
-                    {"id": "weapon_mac10",  "name": "MAC-10"},
-                    {"id": "weapon_mp9",    "name": "MP9"},
-                    {"id": "weapon_mp7",    "name": "MP7"},
-                    {"id": "weapon_mp5sd",  "name": "MP5-SD"},
-                    {"id": "weapon_ump45",  "name": "UMP-45"},
-                    {"id": "weapon_p90",    "name": "P90"},
-                    {"id": "weapon_bizon",  "name": "PP-Bizon"},
-                ],
-            },
-            {
-                "id": "rifle", "name": "Rifle", "type_tag": "CSGO_Type_Rifle",
-                "approx": 520,
-                "weapons": [
-                    {"id": "weapon_ak47",          "name": "AK-47"},
-                    {"id": "weapon_m4a1",          "name": "M4A4"},
-                    {"id": "weapon_m4a1_silencer", "name": "M4A1-S"},
-                    {"id": "weapon_famas",         "name": "FAMAS"},
-                    {"id": "weapon_galilar",       "name": "Galil AR"},
-                    {"id": "weapon_aug",           "name": "AUG"},
-                    {"id": "weapon_sg556",         "name": "SG 553"},
-                ],
-            },
-            {
-                "id": "sniper", "name": "Sniper Rifle", "type_tag": "CSGO_Type_SniperRifle",
-                "approx": 180,
-                "weapons": [
-                    {"id": "weapon_awp",    "name": "AWP"},
-                    {"id": "weapon_ssg08",  "name": "SSG 08"},
-                    {"id": "weapon_scar20", "name": "SCAR-20"},
-                    {"id": "weapon_g3sg1",  "name": "G3SG1"},
-                ],
-            },
-            {
-                "id": "shotgun", "name": "Shotgun", "type_tag": "CSGO_Type_Shotgun",
-                "approx": 120,
-                "weapons": [
-                    {"id": "weapon_nova",     "name": "Nova"},
-                    {"id": "weapon_xm1014",   "name": "XM1014"},
-                    {"id": "weapon_sawedoff", "name": "Sawed-Off"},
-                    {"id": "weapon_mag7",     "name": "MAG-7"},
-                ],
-            },
-            {
-                "id": "machinegun", "name": "Machine Gun", "type_tag": "CSGO_Type_Machinegun",
-                "approx": 60,
-                "weapons": [
-                    {"id": "weapon_m249",  "name": "M249"},
-                    {"id": "weapon_negev", "name": "Negev"},
-                ],
-            },
+            {"id": "pistol",     "name": "Pistol",        "type_tag": "CSGO_Type_Pistol",      "approx": 450},
+            {"id": "smg",        "name": "SMG",           "type_tag": "CSGO_Type_SMG",         "approx": 280},
+            {"id": "rifle",      "name": "Rifle",         "type_tag": "CSGO_Type_Rifle",       "approx": 520},
+            {"id": "sniper",     "name": "Sniper Rifle",  "type_tag": "CSGO_Type_SniperRifle", "approx": 180},
+            {"id": "shotgun",    "name": "Shotgun",       "type_tag": "CSGO_Type_Shotgun",     "approx": 120},
+            {"id": "machinegun", "name": "Machine Gun",   "type_tag": "CSGO_Type_Machinegun",  "approx": 60},
         ],
     },
     {
         "group": "Equipment",
         "items": [
-            {
-                "id": "knife", "name": "Knife", "type_tag": "CSGO_Type_Knife",
-                "approx": 1200,
-                "weapons": [
-                    {"id": "weapon_knife_karambit",    "name": "Karambit"},
-                    {"id": "weapon_knife_m9_bayonet",  "name": "M9 Bayonet"},
-                    {"id": "weapon_bayonet",           "name": "Bayonet"},
-                    {"id": "weapon_knife_butterfly",   "name": "Butterfly Knife"},
-                    {"id": "weapon_knife_flip",        "name": "Flip Knife"},
-                    {"id": "weapon_knife_gut",         "name": "Gut Knife"},
-                    {"id": "weapon_knife_tactical",    "name": "Huntsman Knife"},
-                    {"id": "weapon_knife_falchion",    "name": "Falchion Knife"},
-                    {"id": "weapon_knife_bowie",       "name": "Bowie Knife"},
-                    {"id": "weapon_knife_shadow_dagger","name": "Shadow Daggers"},
-                    {"id": "weapon_knife_ursus",       "name": "Ursus Knife"},
-                    {"id": "weapon_knife_gypsy_jackknife","name": "Navaja Knife"},
-                    {"id": "weapon_knife_stiletto",    "name": "Stiletto Knife"},
-                    {"id": "weapon_knife_talon",       "name": "Talon Knife"},
-                    {"id": "weapon_knife_classic",     "name": "Classic Knife"},
-                    {"id": "weapon_knife_paracord",    "name": "Paracord Knife"},
-                    {"id": "weapon_knife_survival_bowie","name": "Survival Knife"},
-                    {"id": "weapon_knife_nomad",       "name": "Nomad Knife"},
-                    {"id": "weapon_knife_skeleton",    "name": "Skeleton Knife"},
-                    {"id": "weapon_knife_kukri",       "name": "Kukri Knife"},
-                ],
-            },
-            {
-                "id": "gloves", "name": "Gloves", "type_tag": "CSGO_Type_Gloves",
-                "approx": 200,
-                "weapons": [
-                    {"id": "weapon_bloodhound_gloves",    "name": "Bloodhound Gloves"},
-                    {"id": "weapon_driver_gloves",        "name": "Driver Gloves"},
-                    {"id": "weapon_hand_wraps",           "name": "Hand Wraps"},
-                    {"id": "weapon_moto_gloves",          "name": "Moto Gloves"},
-                    {"id": "weapon_specialist_gloves",    "name": "Specialist Gloves"},
-                    {"id": "weapon_sport_gloves",         "name": "Sport Gloves"},
-                    {"id": "weapon_hydra_gloves",         "name": "Hydra Gloves"},
-                    {"id": "weapon_broken_fang_gloves",   "name": "Broken Fang Gloves"},
-                ],
-            },
+            {"id": "knife",  "name": "Knife",  "type_tag": "CSGO_Type_Knife",  "approx": 1200},
+            {"id": "gloves", "name": "Gloves", "type_tag": "CSGO_Type_Gloves", "approx": 200},
         ],
     },
     {
         "group": "Cosmetics",
         "items": [
-            {
-                "id": "sticker", "name": "Sticker", "type_tag": "CSGO_Type_Sticker",
-                "approx": 8000, "weapons": [],
-            },
-            {
-                "id": "patch", "name": "Patch", "type_tag": "CSGO_Type_Patch",
-                "approx": 200, "weapons": [],
-            },
-            {
-                "id": "graffiti", "name": "Graffiti", "type_tag": "CSGO_Type_Spray",
-                "approx": 500, "weapons": [],
-            },
-            {
-                "id": "music_kit", "name": "Music Kit", "type_tag": "CSGO_Type_MusicKit",
-                "approx": 100, "weapons": [],
-            },
+            {"id": "sticker",   "name": "Sticker",   "type_tag": "CSGO_Type_Sticker",   "approx": 8000},
+            {"id": "patch",     "name": "Patch",     "type_tag": "CSGO_Type_Patch",     "approx": 200},
+            {"id": "graffiti",  "name": "Graffiti",  "type_tag": "CSGO_Type_Spray",     "approx": 500},
+            {"id": "music_kit", "name": "Music Kit", "type_tag": "CSGO_Type_MusicKit",  "approx": 100},
         ],
     },
     {
         "group": "Other",
         "items": [
-            {
-                "id": "container", "name": "Container", "type_tag": "CSGO_Type_WeaponCase",
-                "approx": 300, "weapons": [],
-            },
-            {
-                "id": "agent", "name": "Agent", "type_tag": "Type_CustomPlayer",
-                "approx": 150, "weapons": [],
-            },
-            {
-                "id": "collectible", "name": "Collectible", "type_tag": "CSGO_Type_Collectible",
-                "approx": 50, "weapons": [],
-            },
+            {"id": "container",   "name": "Container",   "type_tag": "CSGO_Type_WeaponCase",   "approx": 300},
+            {"id": "agent",       "name": "Agent",       "type_tag": "Type_CustomPlayer",      "approx": 150},
+            {"id": "collectible", "name": "Collectible", "type_tag": "CSGO_Type_Collectible",  "approx": 50},
         ],
     },
 ]
@@ -617,7 +494,6 @@ app.add_middleware(
 
 
 class LibraryParams(BaseModel):
-    output_file: str = ""
     selected_type_tags: List[str] = []
     delay_min: float = 2.0
     delay_max: float = 4.0
@@ -736,34 +612,15 @@ async def import_csv_route(
         except (ValueError, AttributeError):
             return None
 
-    def _parse_int(s: str):
-        """Extract first integer from a string like '17 on sale'."""
-        if not s:
-            return None
-        m = _re.search(r"\d+", s)
-        try:
-            return int(m.group()) if m else None
-        except (ValueError, AttributeError):
-            return None
-
     skins = []
     for row in _csv.DictReader(io.StringIO(text)):
         name = _get(row, "name") or _get(row, "hash_name") or ""
         if not name:
             continue
-
-        price_usd  = _parse_float(_get(row, "sell_price_usd"))
-        listings   = _parse_int(_get(row, "sell_listings"))
-        buff_price = _parse_float(_get(row, "buff_price"))
-
         skins.append(SimpleNamespace(
             hash_name=_get(row, "hash_name") or name,
             name=name,
-            sell_price_text=_get(row, "sell_price_text"),
-            sell_price_usd=price_usd,
-            sell_listings=listings,
-            item_type=_get(row, "item_type"),
-            buff_price=buff_price,
+            buff_price=_parse_float(_get(row, "buff_price")),
         ))
 
     n = _db.upsert_buff_prices(skins)
