@@ -355,6 +355,14 @@
             <option value="23">CNY (¥)</option>
           </select>
         </div>
+        <div class="field">
+          <label>价格下限（留空=不限）</label>
+          <input type="number" id="lib-pmin" placeholder="e.g. 50" min="0" step="1" style="width:110px">
+        </div>
+        <div class="field">
+          <label>价格上限（留空=不限）</label>
+          <input type="number" id="lib-pmax" placeholder="e.g. 200" min="0" step="1" style="width:110px">
+        </div>
       </div>
       <div class="row" style="margin-top:14px">
         <button class="btn btn-primary" id="lib-start-btn" onclick="startLibrary()">▶ Build Library</button>
@@ -938,6 +946,8 @@ async function startLibrary() {
     max_429_retries: parseInt($('lib-retries').value) || 8,
     retry_backoff_base: 15.0,
     currency: parseInt($('lib-currency').value) || 1,
+    price_min: $('lib-pmin').value !== '' ? parseFloat($('lib-pmin').value) : null,
+    price_max: $('lib-pmax').value !== '' ? parseFloat($('lib-pmax').value) : null,
     resume: false,   // fresh start; server will discard existing checkpoint
   };
   await _launchLibraryJob(params, `全新构建：${tags.length} 个分类`);

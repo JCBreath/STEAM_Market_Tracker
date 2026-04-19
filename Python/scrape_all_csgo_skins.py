@@ -201,6 +201,8 @@ class SteamMarketScraper:
         weapon_tag: str = None,
         on_page=None,
         currency: int = 1,
+        price_min: float = None,
+        price_max: float = None,
     ) -> List[SteamSkin]:
         """on_page(skins): called after each page with that page's SteamSkin list."""
         """
@@ -244,6 +246,10 @@ class SteamMarketScraper:
                 ("sort_dir", "desc"),
                 ("currency", currency),
             ]
+            if price_min is not None:
+                params.append(("lower_price", int(price_min * 100)))
+            if price_max is not None:
+                params.append(("upper_price", int(price_max * 100)))
             if category_type:
                 params.append(("category_730_Type[]", f"tag_{category_type}"))
             if weapon_tag:
