@@ -625,8 +625,8 @@ class LibraryParams(BaseModel):
     retry_backoff_base: float = 15.0
     resume: bool = True   # if True, load checkpoint and skip completed categories
     currency: int = 1     # 1=USD, 23=CNY
-    price_min: float = None
-    price_max: float = None
+    price_min: Optional[float] = None
+    price_max: Optional[float] = None
 
 
 class SearchParams(BaseModel):
