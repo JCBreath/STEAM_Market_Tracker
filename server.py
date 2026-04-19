@@ -26,7 +26,6 @@ from typing import Any, Dict, List, Optional
 # ── Path setup ──────────────────────────────────────────────────────────────
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(_HERE, "Python"))
 
 # ── Thread-local stdout router ──────────────────────────────────────────────
 # Replaces sys.stdout once; each job thread registers its own Queue so that
@@ -81,8 +80,8 @@ def _set_queue(q: Optional[Queue]) -> None:
 # ── Module imports (after stdout patching) ──────────────────────────────────
 
 try:
-    from csgo_market_tracker import MarketItem, MarketTracker, write_csv, write_json
-    from scrape_all_csgo_skins import SteamMarketScraper
+    from scraper.search import MarketTracker, write_csv, write_json
+    from scraper.bulk import SteamMarketScrapeError, SteamMarketScraper
 except ImportError as exc:
     _REAL_STDOUT.write(f"[ERROR] Import failed: {exc}\n")
     _REAL_STDOUT.write("[ERROR] Run server.py from inside STEAM_Market_Tracker/\n")
@@ -105,6 +104,32 @@ OUTPUT_DIR = os.path.join(_HERE, "output")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 CHECKPOINT_PATH = os.path.join(_HERE, "library_checkpoint.json")
+
+
+def _resolve_output_path(name: str) -> str:
+    cleaned = (name or "").strip()
+    if not cleaned:
+        raise HTTPException(400, "Filename is required")
+    if os.path.isabs(cleaned):
+        raise HTTPException(400, "Absolute paths are not allowed")
+    if os.path.basename(cleaned) != cleaned:
+        raise HTTPException(400, "Nested paths are not allowed")
+    path = os.path.abspath(os.path.join(OUTPUT_DIR, cleaned))
+    if os.path.commonpath([OUTPUT_DIR, path]) != OUTPUT_DIR:
+        raise HTTPException(400, "Invalid file path")
+    return path
+
+
+def _build_output_path(
+    name: str,
+    default_name: str,
+    allowed_exts: tuple[str, ...],
+) -> tuple[str, str]:
+    raw = (name or "").strip() or default_name
+    if not any(raw.endswith(ext) for ext in allowed_exts):
+        raw += allowed_exts[0]
+    path = _resolve_output_path(raw)
+    return os.path.basename(path), path
 
 
 def _load_checkpoint() -> Optional[Dict]:
@@ -218,10 +243,6 @@ def _parse_progress(job: Job, text: str) -> None:
 # ── Job runners ──────────────────────────────────────────────────────────────
 
 
-class _StopJob(Exception):
-    pass
-
-
 def _run_search(job: Job) -> None:
     _set_queue(job._queue)
     try:
@@ -266,12 +287,13 @@ def _run_bulk(job: Job) -> None:
     _set_queue(job._queue)
     try:
         p = job.params
-        raw = (p.get("output_file") or "").strip() or f"bulk_{int(time.time())}"
-        if not any(raw.endswith(ext) for ext in (".csv", ".json", ".jsonl")):
-            raw += ".csv"
-        fpath = os.path.join(OUTPUT_DIR, raw)
-        job.output_file = raw
-        fmt = "jsonl" if raw.endswith((".json", ".jsonl")) else "csv"
+        raw_name, fpath = _build_output_path(
+            p.get("output_file"),
+            f"bulk_{int(time.time())}",
+            (".csv", ".json", ".jsonl"),
+        )
+        job.output_file = raw_name
+        fmt = "jsonl" if raw_name.endswith((".json", ".jsonl")) else "csv"
 
         scraper = SteamMarketScraper(
             delay_min=p.get("delay_min", 2.0),
@@ -280,27 +302,24 @@ def _run_bulk(job: Job) -> None:
             retry_backoff_base=p.get("retry_backoff_base", 15.0),
         )
 
-        orig_delay = scraper._delay
-
-        def _guarded_delay():
-            if job._stop.is_set():
-                raise _StopJob()
-            orig_delay()
-
-        scraper._delay = _guarded_delay
-
         try:
             skins = scraper.fetch_all_skins(
                 max_items=p.get("max_items"),
                 start_offset=p.get("start_offset", 0),
                 output_file=fpath,
                 save_format=fmt,
+                stop_event=job._stop,
+                raise_on_error=True,
             )
             job.items = [asdict(s) for s in skins]
-            job.status = "done"
-        except _StopJob:
+            job.status = "stopped" if job._stop.is_set() else "done"
+        except KeyboardInterrupt:
             job.status = "stopped"
             print("Job stopped by user.")
+        except SteamMarketScrapeError as exc:
+            job.status = "error"
+            job.error = str(exc)
+            print(f"[ERROR] {exc}")
     except Exception as exc:
         job.status = "error"
         job.error = str(exc)
@@ -416,14 +435,6 @@ def _run_library(job: Job) -> None:
                 max_429_retries=p.get("max_429_retries", 8),
                 retry_backoff_base=p.get("retry_backoff_base", 15.0),
             )
-            orig_delay = scraper._delay
-
-            def _guarded(orig=orig_delay):
-                if job._stop.is_set():
-                    raise _StopJob()
-                orig()
-
-            scraper._delay = _guarded
             cat_total = 0
 
             def on_page(skins, offset, _tag=tag):
@@ -443,6 +454,8 @@ def _run_library(job: Job) -> None:
                     on_page=on_page,
                     price_min=p.get("price_min"),
                     price_max=p.get("price_max"),
+                    stop_event=job._stop,
+                    raise_on_error=True,
                 )
                 # Mark category complete in checkpoint
                 completed.add(tag)
@@ -456,10 +469,18 @@ def _run_library(job: Job) -> None:
                 db_total = _db.count()
                 job.progress["collected"] = db_total
                 print(f"✓ {cat_name}: {cat_total} items  (DB total: {db_total:,})")
-            except _StopJob:
+            except KeyboardInterrupt:
                 raise
+            except SteamMarketScrapeError as exc:
+                job.status = "error"
+                job.error = str(exc)
+                print(f"[ERROR] {cat_name} failed: {exc}")
+                return
             except Exception as exc:
-                print(f"[WARN] {cat_name} failed: {exc} — skipping")
+                job.status = "error"
+                job.error = str(exc)
+                print(f"[ERROR] {cat_name} failed: {exc}")
+                return
 
         final = _db.count()
         job.progress["collected"] = final
@@ -471,7 +492,7 @@ def _run_library(job: Job) -> None:
             _clear_checkpoint()
             print(f"\n{'='*60}")
             print(f"Library complete. Database: {final:,} items total.")
-    except _StopJob:
+    except KeyboardInterrupt:
         job.status = "stopped"
         print("Build paused — checkpoint saved.")
     except Exception as exc:
@@ -554,14 +575,49 @@ def db_stats():
 def db_items(
     search: str = Query(""),
     category: str = Query(""),
+    steam_price_min: Optional[float] = Query(None),
+    steam_price_max: Optional[float] = Query(None),
+    buff_price_min: Optional[float] = Query(None),
+    buff_price_max: Optional[float] = Query(None),
+    listings_min: Optional[int] = Query(None),
+    listings_max: Optional[int] = Query(None),
+    has_steam_price: Optional[bool] = Query(None),
+    has_buff_price: Optional[bool] = Query(None),
+    has_ratio: Optional[bool] = Query(None),
     sort_by: str = Query("name"),
     limit: int = Query(200, ge=1, le=1000),
     offset: int = Query(0, ge=0),
 ):
     return {
-        "items": _db.query(search=search, category=category,
-                           sort_by=sort_by, limit=limit, offset=offset),
-        "total": _db.count(search=search, category=category),
+        "items": _db.query(
+            search=search,
+            category=category,
+            steam_price_min=steam_price_min,
+            steam_price_max=steam_price_max,
+            buff_price_min=buff_price_min,
+            buff_price_max=buff_price_max,
+            listings_min=listings_min,
+            listings_max=listings_max,
+            has_steam_price=has_steam_price,
+            has_buff_price=has_buff_price,
+            has_ratio=has_ratio,
+            sort_by=sort_by,
+            limit=limit,
+            offset=offset,
+        ),
+        "total": _db.count(
+            search=search,
+            category=category,
+            steam_price_min=steam_price_min,
+            steam_price_max=steam_price_max,
+            buff_price_min=buff_price_min,
+            buff_price_max=buff_price_max,
+            listings_min=listings_min,
+            listings_max=listings_max,
+            has_steam_price=has_steam_price,
+            has_buff_price=has_buff_price,
+            has_ratio=has_ratio,
+        ),
     }
 
 
@@ -628,8 +684,10 @@ async def import_csv_route(
 @app.post("/api/db/export")
 def db_export(fmt: str = "csv"):
     """Export the full database to a file in output/."""
+    if fmt not in {"csv", "json"}:
+        raise HTTPException(400, "fmt must be 'csv' or 'json'")
     fname = f"library_export_{int(time.time())}.{fmt}"
-    fpath = os.path.join(OUTPUT_DIR, fname)
+    _, fpath = _build_output_path(fname, fname, (f".{fmt}",))
     if fmt == "json":
         n = _db.export_json(fpath)
     else:
@@ -664,6 +722,8 @@ def clear_checkpoint_route():
 
 @app.post("/api/jobs/library")
 def create_library_job(params: LibraryParams):
+    if any(j.type == "library" and j.status == "running" for j in JOBS.values()):
+        raise HTTPException(409, "A library build is already running")
     jid = uuid.uuid4().hex[:8]
     job = Job(
         id=jid, type="library", status="running", params=params.dict(),
@@ -718,9 +778,7 @@ def stop_job(jid: str):
     if not job:
         raise HTTPException(404, "Job not found")
     job._stop.set()
-    if job.status == "running":
-        job.status = "stopped"
-    return {"ok": True}
+    return {"ok": True, "status": job.status}
 
 
 @app.get("/api/jobs/{jid}/events")
@@ -780,24 +838,34 @@ def list_files():
 
 @app.get("/api/files/{filename:path}")
 def download_file(filename: str):
-    fp = os.path.join(OUTPUT_DIR, filename)
+    fp = _resolve_output_path(filename)
     if not os.path.isfile(fp):
         raise HTTPException(404, "File not found")
-    return FileResponse(fp, filename=filename)
+    return FileResponse(fp, filename=os.path.basename(fp))
 
 
 @app.delete("/api/files/{filename:path}")
 def delete_file(filename: str):
-    fp = os.path.join(OUTPUT_DIR, filename)
+    fp = _resolve_output_path(filename)
     if not os.path.isfile(fp):
         raise HTTPException(404, "File not found")
     os.remove(fp)
     return {"ok": True}
 
 
+@app.get("/app.css")
+def get_css():
+    return FileResponse(os.path.join(_HERE, "static", "app.css"), media_type="text/css")
+
+
+@app.get("/app.js")
+def get_js():
+    return FileResponse(os.path.join(_HERE, "static", "app.js"), media_type="application/javascript")
+
+
 @app.get("/")
 def root():
-    return FileResponse(os.path.join(_HERE, "index.html"))
+    return FileResponse(os.path.join(_HERE, "static", "index.html"))
 
 
 if __name__ == "__main__":

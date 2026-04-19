@@ -186,6 +186,15 @@ _SORT_MAP = {
 def query(
     search: str = "",
     category: str = "",
+    steam_price_min: Optional[float] = None,
+    steam_price_max: Optional[float] = None,
+    buff_price_min: Optional[float] = None,
+    buff_price_max: Optional[float] = None,
+    listings_min: Optional[int] = None,
+    listings_max: Optional[int] = None,
+    has_steam_price: Optional[bool] = None,
+    has_buff_price: Optional[bool] = None,
+    has_ratio: Optional[bool] = None,
     limit: int = 200,
     offset: int = 0,
     sort_by: str = "name",
@@ -198,6 +207,36 @@ def query(
     if category:
         clauses.append("category_type = ?")
         params.append(category)
+    if steam_price_min is not None:
+        clauses.append("sell_price_usd >= ?")
+        params.append(steam_price_min)
+    if steam_price_max is not None:
+        clauses.append("sell_price_usd <= ?")
+        params.append(steam_price_max)
+    if buff_price_min is not None:
+        clauses.append("buff_price >= ?")
+        params.append(buff_price_min)
+    if buff_price_max is not None:
+        clauses.append("buff_price <= ?")
+        params.append(buff_price_max)
+    if listings_min is not None:
+        clauses.append("sell_listings >= ?")
+        params.append(listings_min)
+    if listings_max is not None:
+        clauses.append("sell_listings <= ?")
+        params.append(listings_max)
+    if has_steam_price is True:
+        clauses.append("sell_price_usd IS NOT NULL")
+    elif has_steam_price is False:
+        clauses.append("sell_price_usd IS NULL")
+    if has_buff_price is True:
+        clauses.append("buff_price IS NOT NULL")
+    elif has_buff_price is False:
+        clauses.append("buff_price IS NULL")
+    if has_ratio is True:
+        clauses.append("steam_buff_ratio IS NOT NULL")
+    elif has_ratio is False:
+        clauses.append("steam_buff_ratio IS NULL")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     order = _SORT_MAP.get(sort_by, "name COLLATE NOCASE")
     rows = conn.execute(
@@ -207,7 +246,19 @@ def query(
     return [dict(r) for r in rows]
 
 
-def count(search: str = "", category: str = "") -> int:
+def count(
+    search: str = "",
+    category: str = "",
+    steam_price_min: Optional[float] = None,
+    steam_price_max: Optional[float] = None,
+    buff_price_min: Optional[float] = None,
+    buff_price_max: Optional[float] = None,
+    listings_min: Optional[int] = None,
+    listings_max: Optional[int] = None,
+    has_steam_price: Optional[bool] = None,
+    has_buff_price: Optional[bool] = None,
+    has_ratio: Optional[bool] = None,
+) -> int:
     conn = _conn()
     clauses, params = [], []
     if search:
@@ -216,6 +267,36 @@ def count(search: str = "", category: str = "") -> int:
     if category:
         clauses.append("category_type = ?")
         params.append(category)
+    if steam_price_min is not None:
+        clauses.append("sell_price_usd >= ?")
+        params.append(steam_price_min)
+    if steam_price_max is not None:
+        clauses.append("sell_price_usd <= ?")
+        params.append(steam_price_max)
+    if buff_price_min is not None:
+        clauses.append("buff_price >= ?")
+        params.append(buff_price_min)
+    if buff_price_max is not None:
+        clauses.append("buff_price <= ?")
+        params.append(buff_price_max)
+    if listings_min is not None:
+        clauses.append("sell_listings >= ?")
+        params.append(listings_min)
+    if listings_max is not None:
+        clauses.append("sell_listings <= ?")
+        params.append(listings_max)
+    if has_steam_price is True:
+        clauses.append("sell_price_usd IS NOT NULL")
+    elif has_steam_price is False:
+        clauses.append("sell_price_usd IS NULL")
+    if has_buff_price is True:
+        clauses.append("buff_price IS NOT NULL")
+    elif has_buff_price is False:
+        clauses.append("buff_price IS NULL")
+    if has_ratio is True:
+        clauses.append("steam_buff_ratio IS NOT NULL")
+    elif has_ratio is False:
+        clauses.append("steam_buff_ratio IS NULL")
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     return conn.execute(f"SELECT COUNT(*) FROM items {where}", params).fetchone()[0]
 

@@ -18,9 +18,9 @@ import time
 import json
 import csv
 import argparse
+import threading
 from typing import List, Dict, Optional
 from dataclasses import dataclass, asdict
-from urllib.parse import urlencode
 import random
 
 # Steam API endpoints
@@ -69,6 +69,10 @@ class SteamSkin:
     item_type: Optional[str] = None  # Weapon, Knife, Gloves, etc.
 
 
+class SteamMarketScrapeError(RuntimeError):
+    """Raised when a scrape cannot complete successfully."""
+
+
 class SteamMarketScraper:
     """Scraper for Steam Community Market CS:GO weapon skins."""
     
@@ -107,11 +111,28 @@ class SteamMarketScraper:
             "Connection": "keep-alive",
         }
     
-    def _delay(self):
+    def _check_stopped(self, stop_event: Optional[threading.Event] = None):
+        if stop_event is not None and stop_event.is_set():
+            raise KeyboardInterrupt()
+
+    def _sleep_interruptibly(
+        self,
+        seconds: float,
+        stop_event: Optional[threading.Event] = None,
+    ):
+        remaining = max(seconds, 0.0)
+        while remaining > 0:
+            self._check_stopped(stop_event)
+            chunk = min(remaining, 0.5)
+            time.sleep(chunk)
+            remaining -= chunk
+        self._check_stopped(stop_event)
+
+    def _delay(self, stop_event: Optional[threading.Event] = None):
         """Add randomized delay to avoid rate limiting."""
         delay = random.uniform(self.delay_min, self.delay_max)
         jitter = random.uniform(-0.3, 0.3)
-        time.sleep(delay + jitter)
+        self._sleep_interruptibly(delay + jitter, stop_event)
     
     def _is_weapon_skin(self, name: str) -> bool:
         """Check if item is a weapon skin (not sticker, case, etc.)."""
@@ -201,6 +222,8 @@ class SteamMarketScraper:
         on_page=None,
         price_min: float = None,
         price_max: float = None,
+        stop_event: Optional[threading.Event] = None,
+        raise_on_error: bool = False,
     ) -> List[SteamSkin]:
         """on_page(skins): called after each page with that page's SteamSkin list."""
         """
@@ -230,6 +253,7 @@ class SteamMarketScraper:
 
         rate_limit_retries = 0
         while True:
+            self._check_stopped(stop_event)
             if max_items and len(all_skins) >= max_items:
                 print(f"\nReached max_items limit ({max_items})")
                 break
@@ -255,7 +279,7 @@ class SteamMarketScraper:
 
             try:
                 if self.total_requests > 0:
-                    self._delay()
+                    self._delay(stop_event)
 
                 response = self.session.get(
                     STEAM_MARKET_SEARCH_URL, params=params,
@@ -266,10 +290,13 @@ class SteamMarketScraper:
                 if response.status_code == 429:
                     rate_limit_retries += 1
                     if rate_limit_retries > self.max_429_retries:
-                        print(
-                            f"[ERROR] HTTP 429 at offset {current_offset} after "
+                        msg = (
+                            f"HTTP 429 at offset {current_offset} after "
                             f"{self.max_429_retries} retries"
                         )
+                        print(f"[ERROR] {msg}")
+                        if raise_on_error:
+                            raise SteamMarketScrapeError(msg)
                         break
                     backoff = self.retry_backoff_base * (2 ** (rate_limit_retries - 1))
                     backoff = min(backoff, 600.0)
@@ -277,11 +304,17 @@ class SteamMarketScraper:
                         f"[WARN] HTTP 429 at offset {current_offset}; retry "
                         f"{rate_limit_retries}/{self.max_429_retries} after {backoff:.1f}s"
                     )
-                    time.sleep(backoff + random.uniform(0.0, 1.0))
+                    self._sleep_interruptibly(
+                        backoff + random.uniform(0.0, 1.0),
+                        stop_event,
+                    )
                     continue
 
                 if response.status_code != 200:
-                    print(f"[ERROR] HTTP {response.status_code} at offset {current_offset}")
+                    msg = f"HTTP {response.status_code} at offset {current_offset}"
+                    print(f"[ERROR] {msg}")
+                    if raise_on_error:
+                        raise SteamMarketScrapeError(msg)
                     break
 
                 rate_limit_retries = 0
@@ -290,7 +323,10 @@ class SteamMarketScraper:
                 
                 # Check for success
                 if not data.get("success"):
-                    print(f"[ERROR] API returned success=false at offset {current_offset}")
+                    msg = f"API returned success=false at offset {current_offset}"
+                    print(f"[ERROR] {msg}")
+                    if raise_on_error:
+                        raise SteamMarketScrapeError(msg)
                     break
                 
                 # Get total count
@@ -365,14 +401,20 @@ class SteamMarketScraper:
                     break
                 
             except requests.exceptions.RequestException as e:
-                print(f"[ERROR] Request failed at offset {current_offset}: {e}")
+                msg = f"Request failed at offset {current_offset}: {e}"
+                print(f"[ERROR] {msg}")
+                if raise_on_error:
+                    raise SteamMarketScrapeError(msg) from e
                 break
             except json.JSONDecodeError as e:
-                print(f"[ERROR] JSON decode error at offset {current_offset}: {e}")
+                msg = f"JSON decode error at offset {current_offset}: {e}"
+                print(f"[ERROR] {msg}")
+                if raise_on_error:
+                    raise SteamMarketScrapeError(msg) from e
                 break
             except KeyboardInterrupt:
                 print(f"\n\n[INTERRUPTED] Stopping at offset {current_offset}")
-                break
+                raise
         
         print(f"\n{'='*80}")
         print(f"Scraping complete!")

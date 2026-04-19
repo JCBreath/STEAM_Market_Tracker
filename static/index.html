@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>STEAM Market Tracker</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════ HEADER ══════════════════════ -->
+<header id="app-header">
+  <div id="hdr-title">数据库</div>
+  <div id="hdr-actions">
+    <button class="btn btn-ghost btn-sm" onclick="exportDb('csv')">⬇ CSV</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportDb('json')">⬇ JSON</button>
+    <button class="btn btn-ghost btn-sm" onclick="loadViz()">⟳</button>
+  </div>
+  <div class="server-badge">
+    <div class="dot" id="srv-dot"></div>
+    <span id="srv-label">Connected</span>
+  </div>
+</header>
+
+<!-- ══════════════════════ PAGES ══════════════════════ -->
+<div id="pages">
+
+  <!-- ── Tab 0: 数据库 ── -->
+  <div class="page active" id="page-db">
+
+    <div id="viz-stats-row" class="stats-strip" style="margin-bottom:14px">
+      <div class="empty-state" style="padding:12px">加载中…</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">市场分布</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:11px;color:var(--dim);margin-bottom:8px">分类分布</div>
+          <div class="chart-wrap"><canvas id="viz-cat-canvas"></canvas></div>
+        </div>
+        <div style="flex:1;min-width:220px">
+          <div style="font-size:11px;color:var(--dim);margin-bottom:8px">价格分布</div>
+          <div class="chart-wrap"><canvas id="viz-price-canvas"></canvas></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">浏览数据</div>
+      <div class="filter-row">
+        <input type="text" id="viz-search" placeholder="搜索名称…" style="flex:1" oninput="vizReload()">
+        <select id="viz-cat-filter" style="min-width:130px" onchange="vizReload()">
+          <option value="">全部分类</option>
+        </select>
+        <select id="viz-sort-sel" style="min-width:140px" onchange="vizReload()">
+          <option value="name">名称 A→Z</option>
+          <option value="price_asc">价格 低→高</option>
+          <option value="price_desc">价格 高→低</option>
+          <option value="listings_desc">挂单数 多→少</option>
+          <option value="ratio_asc">Ratio 低→高</option>
+          <option value="ratio_desc">Ratio 高→低</option>
+        </select>
+        <span class="count-label" id="viz-count"></span>
+      </div>
+      <details class="adv">
+        <summary>高级筛选</summary>
+        <div class="inner">
+          <div class="filter-grid">
+            <div class="field"><label>Steam 最低价</label><input type="number" id="viz-steam-min" placeholder="不限" min="0" step="0.01" oninput="vizReload()"></div>
+            <div class="field"><label>Steam 最高价</label><input type="number" id="viz-steam-max" placeholder="不限" min="0" step="0.01" oninput="vizReload()"></div>
+            <div class="field"><label>BUFF 最低价</label><input type="number" id="viz-buff-min" placeholder="不限" min="0" step="0.01" oninput="vizReload()"></div>
+            <div class="field"><label>BUFF 最高价</label><input type="number" id="viz-buff-max" placeholder="不限" min="0" step="0.01" oninput="vizReload()"></div>
+            <div class="field"><label>挂单数最低</label><input type="number" id="viz-listings-min" placeholder="不限" min="0" step="1" oninput="vizReload()"></div>
+            <div class="field"><label>挂单数最高</label><input type="number" id="viz-listings-max" placeholder="不限" min="0" step="1" oninput="vizReload()"></div>
+            <div class="field"><label>Steam 价格</label>
+              <select id="viz-has-steam" onchange="vizReload()">
+                <option value="">全部</option><option value="true">仅有价格</option><option value="false">仅无价格</option>
+              </select>
+            </div>
+            <div class="field"><label>BUFF 价格</label>
+              <select id="viz-has-buff" onchange="vizReload()">
+                <option value="">全部</option><option value="true">仅有 BUFF</option><option value="false">仅无 BUFF</option>
+              </select>
+            </div>
+            <div class="field"><label>比价 Ratio</label>
+              <select id="viz-has-ratio" onchange="vizReload()">
+                <option value="">全部</option><option value="true">仅有 Ratio</option><option value="false">仅无 Ratio</option>
+              </select>
+            </div>
+            <div class="field" style="justify-content:flex-end">
+              <label>&nbsp;</label>
+              <button class="btn btn-ghost btn-sm" onclick="resetVizFilters()">重置</button>
+            </div>
+          </div>
+        </div>
+      </details>
+      <div class="tbl-wrap" style="margin-top:10px">
+        <table>
+          <thead><tr>
+            <th>名称</th><th>分类</th><th>Steam USD</th>
+            <th>BUFF 价</th><th>USD/BUFF</th><th>挂单</th><th>更新</th>
+          </tr></thead>
+          <tbody id="viz-tbody">
+            <tr><td colspan="7" class="empty-state">请先 Build Library 或导入数据。</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+        <button class="btn btn-ghost btn-sm" id="viz-prev-btn" onclick="vizPage(-1)" disabled>◀ 上一页</button>
+        <span id="viz-page-info" style="font-size:12px;color:var(--dim)"></span>
+        <button class="btn btn-ghost btn-sm" id="viz-next-btn" onclick="vizPage(1)" disabled>下一页 ▶</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 1: 构建 ── -->
+  <div class="page" id="page-build">
+
+    <div id="lib-cp-bar" class="cp-banner" style="display:none">
+      <div class="cp-banner-title">⚡ 发现未完成的构建记录</div>
+      <div id="lib-cp-info" class="cp-banner-info"></div>
+      <div class="flex-gap">
+        <button class="btn btn-primary btn-sm" onclick="resumeBuild()">⟳ 续传</button>
+        <button class="btn btn-ghost btn-sm" onclick="discardCheckpoint()">✕ 忽略</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">选择分类</div>
+        <div class="flex-gap" style="margin-left:auto">
+          <button class="btn btn-ghost btn-sm" onclick="selectAllCats(true)">全选</button>
+          <button class="btn btn-ghost btn-sm" onclick="selectAllCats(false)">全不选</button>
+          <button class="btn btn-ghost btn-sm" onclick="selectWeaponOnly()">武器</button>
+        </div>
+      </div>
+      <div id="cat-tree"><div class="empty-state" style="padding:16px">Loading…</div></div>
+    </div>
+
+    <div class="card">
+      <details class="adv" open>
+        <summary style="font-size:13px;color:var(--text);font-weight:600">抓取设置</summary>
+        <div class="inner">
+          <div class="row" style="margin-bottom:10px">
+            <div class="field"><label>延迟 Min (s)</label><input type="number" id="lib-dmin" value="2.0" min="0.5" step="0.5"></div>
+            <div class="field"><label>延迟 Max (s)</label><input type="number" id="lib-dmax" value="4.0" min="1.0" step="0.5"></div>
+            <div class="field"><label>429 重试</label><input type="number" id="lib-retries" value="8" min="1"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>价格下限 (USD)</label><input type="number" id="lib-pmin" placeholder="不限" min="0" step="1"></div>
+            <div class="field"><label>价格上限 (USD)</label><input type="number" id="lib-pmax" placeholder="不限" min="0" step="1"></div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="flex-gap" style="margin-bottom:10px">
+        <button class="btn btn-primary" id="lib-start-btn" onclick="startLibrary()">▶ 开始构建</button>
+        <button class="btn btn-danger hidden" id="lib-stop-btn" onclick="stopCurrentJob('library')">■ 停止</button>
+        <span id="lib-estimate" style="font-size:11px;color:var(--dim)"></span>
+      </div>
+      <div id="lib-progress-card" style="display:none">
+        <div class="sep"></div>
+        <div class="flex-gap" style="margin-bottom:8px">
+          <span id="lib-badge"></span>
+          <span id="lib-status-text" style="font-size:12px;color:var(--dim)"></span>
+        </div>
+        <div style="font-size:12px;color:var(--dim);margin-bottom:6px" id="lib-cat-label">–</div>
+        <div class="progress-wrap"><div class="progress-fill" id="lib-bar" style="width:0%"></div></div>
+        <div class="progress-label" id="lib-pct-label">0%</div>
+        <div class="pstats">
+          <div class="pstat"><span class="plabel">分类</span><span class="pval"><span id="lib-done-cats">0</span>/<span id="lib-total-cats">–</span></span></div>
+          <div class="pstat"><span class="plabel">条目</span><span class="pval" id="lib-collected">0</span></div>
+          <div class="pstat"><span class="plabel">耗时</span><span class="pval" id="lib-elapsed">0s</span></div>
+        </div>
+        <div class="sep"></div>
+        <div class="log-header">
+          <span>Build Log</span>
+          <button class="btn btn-ghost btn-sm" onclick="clearLog('lib-log')">清除</button>
+        </div>
+        <div class="log-box" id="lib-log"></div>
+        <div id="lib-dl-wrap" style="display:none;margin-top:8px">
+          <button class="btn btn-ghost btn-sm" onclick="downloadOutput('library')">⬇ 下载输出</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 2: 导入 ── -->
+  <div class="page" id="page-import">
+    <div class="card">
+      <div class="card-title">导入 BUFF CSV</div>
+      <div class="upload-zone">
+        <input type="file" id="import-file" accept=".csv" onchange="onImportFileChange()">
+        <div class="upload-icon">📂</div>
+        <div class="upload-label">点击或拖放 CSV 文件</div>
+        <div class="upload-hint" id="upload-hint">支持 UTF-8 / GBK 编码</div>
+      </div>
+      <div id="import-mapping" class="hidden">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:12px">
+          将 CSV 列与字段对应（<span style="color:var(--warn)">名称*</span> 为必填）
+        </div>
+        <div id="import-mapping-rows" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-bottom:14px"></div>
+        <div class="sep"></div>
+        <div class="flex-gap" style="margin-bottom:10px">
+          <button class="btn btn-primary" onclick="doImport()">⬆ 导入到数据库</button>
+          <span style="font-size:12px;color:var(--dim)">仅写入 BUFF 价格</span>
+        </div>
+        <div id="import-result" style="font-size:13px;margin-top:4px"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab 3: 搜索 ── -->
+  <div class="page" id="page-search">
+
+    <div class="card">
+      <div class="card-title">Steam 搜索</div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="field" style="flex:1">
+          <label>关键词</label>
+          <input type="text" id="s-query" placeholder="e.g. AK-47 Redline" style="min-width:0;width:100%">
+        </div>
+        <div class="field"><label>最多</label><input type="number" id="s-max" value="100" min="1" max="500"></div>
+      </div>
+      <div class="flex-gap" style="margin-bottom:10px">
+        <button class="btn btn-primary" id="s-start-btn" onclick="startSearch()">搜索</button>
+        <button class="btn btn-danger hidden" id="s-stop-btn" onclick="stopCurrentJob('search')">■ 停止</button>
+      </div>
+      <details class="adv">
+        <summary>高级选项</summary>
+        <div class="inner">
+          <div class="row" style="margin-bottom:8px">
+            <div class="field"><label>Timeout (s)</label><input type="number" id="s-timeout" value="15" min="5"></div>
+            <label class="check-row"><input type="checkbox" id="s-noproxy"> No proxy</label>
+          </div>
+          <div class="field" style="margin-bottom:8px">
+            <label>Proxy URL</label>
+            <input type="text" id="s-proxy" placeholder="http://127.0.0.1:7890" style="min-width:0;width:100%">
+          </div>
+          <div class="flex-gap">
+            <label class="check-row"><input type="checkbox" id="s-savecsv"> Save CSV</label>
+            <label class="check-row"><input type="checkbox" id="s-savejson"> Save JSON</label>
+          </div>
+        </div>
+      </details>
+      <div id="s-status-card" style="display:none;margin-top:12px">
+        <div class="flex-gap" style="margin-bottom:6px">
+          <span id="s-badge"></span>
+          <span id="s-status-text" style="font-size:12px;color:var(--dim)"></span>
+          <span class="ml-auto flex-gap" id="s-export-btns" style="display:none">
+            <button class="btn btn-ghost btn-sm" onclick="exportClient('csv')">⬇ CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="exportClient('json')">⬇ JSON</button>
+          </span>
+        </div>
+        <div class="log-box" id="s-log" style="height:120px"></div>
+      </div>
+    </div>
+
+    <div id="s-results-card" class="card" style="display:none">
+      <div style="font-size:13px;font-weight:600;margin-bottom:10px" id="s-results-title">Results</div>
+      <div class="filter-row">
+        <input type="text" id="s-filter" placeholder="过滤…" oninput="renderResults()">
+        <span class="count-label" id="s-count"></span>
+      </div>
+      <div class="tbl-wrap">
+        <table id="s-table">
+          <thead><tr>
+            <th onclick="sortResults('name')">名称 <span class="sort-icon">↕</span></th>
+            <th onclick="sortResults('steam_sell_price_usd')">价格 <span class="sort-icon">↕</span></th>
+            <th onclick="sortResults('steam_sell_listings')">挂单 <span class="sort-icon">↕</span></th>
+          </tr></thead>
+          <tbody id="s-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <details class="adv">
+        <summary style="font-size:13px;color:var(--text);font-weight:600">批量抓取</summary>
+        <div class="inner">
+          <div class="row" style="margin-bottom:8px">
+            <div class="field" style="flex:1">
+              <label>输出文件名</label>
+              <input type="text" id="b-fname" placeholder="csgo_skins" style="min-width:0;width:100%">
+            </div>
+            <div class="field"><label>最大条目</label><input type="number" id="b-max" placeholder="不限" min="1"></div>
+          </div>
+          <div class="row" style="margin-bottom:8px">
+            <div class="field"><label>起始偏移</label><input type="number" id="b-offset" value="0" min="0"></div>
+            <div class="field"><label>延迟 Min</label><input type="number" id="b-dmin" value="2.0" min="0.5" step="0.5"></div>
+            <div class="field"><label>延迟 Max</label><input type="number" id="b-dmax" value="4.0" min="1.0" step="0.5"></div>
+          </div>
+          <div class="row" style="margin-bottom:10px">
+            <div class="field"><label>429 重试</label><input type="number" id="b-retries" value="8" min="1"></div>
+            <div class="field"><label>Backoff (s)</label><input type="number" id="b-backoff" value="15" min="5"></div>
+          </div>
+          <div class="flex-gap">
+            <button class="btn btn-primary btn-sm" id="b-start-btn" onclick="startBulk()">▶ 开始</button>
+            <button class="btn btn-danger btn-sm hidden" id="b-stop-btn" onclick="stopCurrentJob('bulk')">■ 停止</button>
+          </div>
+          <div id="b-progress-card" style="display:none;margin-top:12px">
+            <div class="flex-gap" style="margin-bottom:6px">
+              <span id="b-badge"></span>
+              <span id="b-status-text" style="font-size:12px;color:var(--dim)"></span>
+            </div>
+            <div class="progress-wrap"><div class="progress-fill" id="b-bar" style="width:0%"></div></div>
+            <div class="progress-label" id="b-pct-label">0%</div>
+            <div class="pstats">
+              <div class="pstat"><span class="plabel">已收集</span><span class="pval" id="b-collected">0</span></div>
+              <div class="pstat"><span class="plabel">总计</span><span class="pval" id="b-total">–</span></div>
+              <div class="pstat"><span class="plabel">请求数</span><span class="pval" id="b-requests">0</span></div>
+              <div class="pstat"><span class="plabel">耗时</span><span class="pval" id="b-elapsed">0s</span></div>
+            </div>
+            <div class="sep"></div>
+            <div class="log-header">
+              <span>Output Log</span>
+              <button class="btn btn-ghost btn-sm" onclick="clearLog('b-log')">清除</button>
+            </div>
+            <div class="log-box" id="b-log" style="height:140px"></div>
+            <div id="b-dl-btn-wrap" style="display:none;margin-top:8px">
+              <button class="btn btn-ghost btn-sm" onclick="downloadOutput('bulk')">⬇ 下载输出</button>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- ── Tab 4: 文件 ── -->
+  <div class="page" id="page-files">
+    <div class="itab-bar">
+      <button class="itab active" onclick="switchFileTab(0)">输出文件</button>
+      <button class="itab" onclick="switchFileTab(1)">任务记录</button>
+    </div>
+    <div class="itab-panel active" id="ftab-files">
+      <div style="margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm" onclick="loadFiles()">⟳ 刷新</button>
+      </div>
+      <div id="files-body"><div class="empty-state">Loading…</div></div>
+    </div>
+    <div class="itab-panel" id="ftab-history">
+      <div style="margin-bottom:10px">
+        <button class="btn btn-ghost btn-sm" onclick="loadHistory()">⟳ 刷新</button>
+      </div>
+      <div id="history-body"><div class="empty-state">Loading…</div></div>
+    </div>
+  </div>
+
+</div><!-- /#pages -->
+
+<!-- ══════════════════════ BOTTOM NAV ══════════════════════ -->
+<nav id="bottom-nav">
+  <button class="nav-item active" onclick="switchTab(0)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+    <span>数据库</span>
+  </button>
+  <button class="nav-item" onclick="switchTab(1)">
+    <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+    <span>构建</span>
+  </button>
+  <button class="nav-item" onclick="switchTab(2)">
+    <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <span>导入</span>
+  </button>
+  <button class="nav-item" onclick="switchTab(3)">
+    <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <span>搜索</span>
+  </button>
+  <button class="nav-item" onclick="switchTab(4)">
+    <svg viewBox="0 0 24 24"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg>
+    <span>文件</span>
+  </button>
+</nav>
+
+<script src="/app.js"></script>
+</body>
+</html>
